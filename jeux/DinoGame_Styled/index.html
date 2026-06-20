@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dino — HTML5</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0e0f11;
+      color: #eee;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      gap: 24px;
+    }
+    #canvas {
+      background: #111;
+      border: 2px solid #333;
+      border-radius: 12px;
+      display: none;
+    }
+    #sidebar {
+      background: #16181c;
+      border: 2px solid #333;
+      border-radius: 12px;
+      padding: 16px;
+      min-width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    h1 {
+      margin: 0 0 10px 0;
+      font-size: 20px;
+      color: #fff;
+    }
+    button {
+      background: #1f2228;
+      border: 2px solid #555;
+      color: #eee;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #2a2d35; }
+    #menu { text-align: center; }
+    .muted { color: #aaa; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="800" height="300"></canvas>
+  <div id="sidebar">
+    <div id="menu">
+      <h1>Dino — HTML5</h1>
+      <button id="btnPlay">▶ Jouer</button>
+    </div>
+    <div id="hud" style="display:none;">
+      <div><b>Score :</b> <span id="score">0.0</span> s</div>
+      <div><b>Vitesse :</b> <span id="speed">0.0</span></div>
+      <button id="btnRestart">↻ Rejouer</button>
+      <button id="btnSound">🔊 Son</button>
+    </div>
+    <div class="muted">
+      Contrôles :<br/>
+      Espace → Sauter<br/>
+      Clic → Sauter
+    </div>
+  </div>
+
+  <audio id="bgm" src="assets/musique.mp3" loop preload="auto"></audio>
+  <audio id="sfxJump" src="assets/jump.wav" preload="auto"></audio>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const btnPlay = document.getElementById("btnPlay");
+    const btnRestart = document.getElementById("btnRestart");
+    const btnSound = document.getElementById("btnSound");
+    const hud = document.getElementById("hud");
+    const menu = document.getElementById("menu");
+    const scoreEl = document.getElementById("score");
+    const speedEl = document.getElementById("speed");
+    const bgm = document.getElementById("bgm");
+    const sfxJump = document.getElementById("sfxJump");
+
+    const groundY = 250;
+    const gravity = 0.6;
+    const jumpVel = -12;
+    const baseSpeed = 4;
+    const speedGain = 0.0002;
+
+    let dino = {x:60,y:0,w:30,h:30,vy:0,onGround:false};
+    let obstacles = [];
+    let running = false;
+    let startTime = 0;
+    let elapsed = 0;
+    let speed = baseSpeed;
+    let rafId = 0;
+    let lastSpawn = 0;
+
+    function reset() {
+      dino.y = groundY - dino.h;
+      dino.vy = 0;
+      dino.onGround = true;
+      obstacles = [];
+      elapsed = 0;
+      speed = baseSpeed;
+      scoreEl.textContent = "0.0";
+      speedEl.textContent = speed.toFixed(1);
+    }
+
+    function spawnCactus() {
+      const w = 20 + Math.random()*20;
+      const h = 25 + Math.random()*30;
+      const y = groundY - h;
+      obstacles.push({x: canvas.width+10, y, w, h});
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = "#222";
+      ctx.lineWidth = 1;
+      for (let y=0;y<canvas.height;y+=20) {
+        ctx.beginPath();
+        ctx.moveTo(0,y+0.5);
+        ctx.lineTo(canvas.width,y+0.5);
+        ctx.stroke();
+      }
+    }
+
+    function loop(t) {
+      rafId = requestAnimationFrame(loop);
+      elapsed = t - startTime;
+      speed = baseSpeed + elapsed*speedGain;
+      scoreEl.textContent = (elapsed/1000).toFixed(1);
+      speedEl.textContent = speed.toFixed(1);
+
+      // physics dino
+      dino.vy += gravity;
+      dino.y += dino.vy;
+      if (dino.y >= groundY - dino.h) {
+        dino.y = groundY - dino.h;
+        dino.vy = 0;
+        dino.onGround = true;
+      } else {
+        dino.onGround = false;
+      }
+
+      // spawn
+      if (t - lastSpawn > 1200 + Math.random()*800) {
+        spawnCactus();
+        lastSpawn = t;
+      }
+
+      // update obstacles
+      for (let i=obstacles.length-1;i>=0;i--) {
+        obstacles[i].x -= speed;
+        if (obstacles[i].x + obstacles[i].w < 0) obstacles.splice(i,1);
+      }
+
+      // draw
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawGrid();
+      // ground line
+      ctx.strokeStyle="#444";
+      ctx.beginPath();
+      ctx.moveTo(0,groundY+0.5);
+      ctx.lineTo(canvas.width,groundY+0.5);
+      ctx.stroke();
+      // dino
+      ctx.fillStyle="#2aa4f4";
+      ctx.fillRect(dino.x,dino.y,dino.w,dino.h);
+      // obstacles
+      ctx.fillStyle="#e02424";
+      for (const ob of obstacles) {
+        ctx.fillRect(ob.x,ob.y,ob.w,ob.h);
+      }
+
+      // collision
+      for (const ob of obstacles) {
+        if (dino.x < ob.x+ob.w && dino.x+dino.w > ob.x &&
+            dino.y < ob.y+ob.h && dino.y+dino.h > ob.y) {
+          gameOver();
+          return;
+        }
+      }
+    }
+
+    function jump() {
+      if (!running) return;
+      if (dino.onGround) {
+        dino.vy = jumpVel;
+        try { sfxJump.currentTime=0; sfxJump.play(); } catch(e){}
+      }
+    }
+
+    function startGame() {
+      reset();
+      menu.style.display="none";
+      hud.style.display="block";
+      canvas.style.display="block";
+      running=true;
+      startTime=performance.now();
+      try { bgm.currentTime=0; bgm.play(); } catch(e){}
+      cancelAnimationFrame(rafId);
+      rafId=requestAnimationFrame(loop);
+    }
+
+    function gameOver() {
+      running=false;
+      cancelAnimationFrame(rafId);
+      bgm.pause();
+      alert("Perdu ! Temps: "+(elapsed/1000).toFixed(1)+"s");
+      hud.style.display="none";
+      menu.style.display="block";
+      canvas.style.display="none";
+    }
+
+    btnPlay.addEventListener("click", startGame);
+    btnRestart.addEventListener("click", ()=>{ if(!running) startGame(); });
+    btnSound.addEventListener("click", ()=>{
+      const muted = bgm.muted;
+      bgm.muted = !muted;
+      sfxJump.muted = !muted;
+      btnSound.textContent = muted? "🔊 Son":"🔇 Muet";
+      if (!bgm.muted && running) bgm.play().catch(()=>{});
+    });
+
+    document.addEventListener("keydown",(e)=>{
+      if (e.code==="Space") { e.preventDefault(); jump(); }
+    });
+    canvas.addEventListener("pointerdown",jump);
+
+    reset();
+  </script>
+</body>
+</html>

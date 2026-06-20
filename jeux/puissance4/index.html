@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Puissance 4</title>
+<style>
+  body{
+    margin:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    background:linear-gradient(180deg,#0b0c0e,#111216);
+    color:#e6eef6;
+    font-family:system-ui,Arial;
+    overflow:hidden;
+  }
+  canvas{
+    background:#0b0d10;
+    border:3px solid #222831;
+    border-radius:14px;
+    box-shadow:8px 8px 0 rgba(0,0,0,0.6);
+    z-index:1;
+  }
+  #menu,#end{
+    position:absolute;
+    inset:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    background:rgba(0,0,0,0.75);
+    z-index:10;
+    animation:fadeIn .6s ease;
+    overflow:hidden;
+  }
+  @keyframes fadeIn {
+    from {opacity:0;}
+    to {opacity:1;}
+  }
+  h1{
+    font-size:48px;
+    margin-bottom:20px;
+    text-shadow:0 0 10px #2aa4f4,0 0 20px #2aa4f4;
+    animation:pulse 2s infinite alternate;
+    z-index:20;
+  }
+  @keyframes pulse {
+    from { transform:scale(1); }
+    to { transform:scale(1.08); }
+  }
+  button{
+    margin:10px;
+    padding:12px 24px;
+    border-radius:12px;
+    border:2px solid #2aa4f4;
+    background:#1f2228;
+    color:#e6eef6;
+    font-weight:bold;
+    font-size:18px;
+    cursor:pointer;
+    box-shadow:0 0 8px rgba(42,164,244,0.4);
+    transition:.2s;
+    z-index:20;
+  }
+  button:hover{
+    background:#2aa4f4;
+    color:#0b0c0e;
+    transform:scale(1.05);
+    box-shadow:0 0 14px rgba(42,164,244,0.8);
+  }
+  #winner{
+    font-size:36px;
+    margin-bottom:20px;
+    text-shadow:0 0 12px #fff;
+  }
+  /* Pions en arrière-plan */
+  .fallingCoin{
+    position:absolute;
+    border-radius:50%;
+    opacity:0.9;
+    animation:fall linear forwards;
+    filter: drop-shadow(0 0 10px rgba(255,255,255,0.6));
+    z-index:5;
+  }
+  @keyframes fall {
+    from { transform:translateY(-120px); }
+    to { transform:translateY(110vh); }
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="700" height="600"></canvas>
+
+<div id="menu">
+  <h1>Puissance 4</h1>
+  <button id="pvp">2 Joueurs</button>
+  <button id="ai">Contre l'IA</button>
+</div>
+
+<div id="end" style="display:none;">
+  <div id="winner"></div>
+  <button id="replay">↻ Rejouer</button>
+</div>
+
+<!-- Sons -->
+<audio id="sfxDrop" src="musique/pion.wav" preload="auto"></audio>
+<audio id="sfxWin" src="musique/win.wav" preload="auto"></audio>
+<audio id="sfxDraw" src="musique/egal.wav" preload="auto"></audio>
+<audio id="bgMenu" src="musique/menu.mp3" preload="auto" loop></audio>
+
+<script>
+(() => {
+  const COLS=7, ROWS=6, SIZE=100;
+  const canvas=document.getElementById('game');
+  const ctx=canvas.getContext('2d');
+  const sfxDrop=document.getElementById('sfxDrop');
+  const sfxWin=document.getElementById('sfxWin');
+  const sfxDraw=document.getElementById('sfxDraw');
+  const bgMenu=document.getElementById('bgMenu');
+
+  let grid, currentPlayer, vsAI=false, gameOver=false;
+  let lastMove={r:null,c:null};
+
+  function resetGame(){
+    grid=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+    currentPlayer=1;
+    gameOver=false;
+    lastMove={r:null,c:null};
+    drawBoard();
+  }
+
+  function drawBoard(){
+    ctx.fillStyle='#004080';
+    ctx.fillRect(0,0,COLS*SIZE,ROWS*SIZE);
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        ctx.beginPath();
+        ctx.arc(c*SIZE+SIZE/2,r*SIZE+SIZE/2,SIZE/2-8,0,Math.PI*2);
+
+        if(grid[r][c]===1){
+          ctx.fillStyle='#ff3333';
+          ctx.shadowColor="#ff6666";
+          ctx.shadowBlur=20;
+        }
+        else if(grid[r][c]===2){
+          ctx.fillStyle='#ffff33';
+          ctx.shadowColor="#ffff99";
+          ctx.shadowBlur=20;
+        }
+        else{
+          ctx.fillStyle='#0b0d10';
+          ctx.shadowBlur=0;
+        }
+
+        ctx.fill();
+
+        // Effet de surbrillance du dernier pion
+        if(lastMove.r===r && lastMove.c===c){
+          ctx.lineWidth=4;
+          ctx.strokeStyle="white";
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.shadowBlur=0;
+  }
+
+  function drop(col){
+    if(gameOver) return false;
+    for(let r=ROWS-1;r>=0;r--){
+      if(grid[r][col]===0){
+        grid[r][col]=currentPlayer;
+        lastMove={r:r,c:col};
+        try{ sfxDrop.currentTime=0; sfxDrop.play(); }catch(e){}
+        if(checkWin(r,col)){
+          showWinner(`Joueur ${currentPlayer} gagne !`, true);
+        } else if(grid.every(row=>row.every(cell=>cell!==0))){
+          showWinner("Égalité !", false, true);
+        } else {
+          currentPlayer=currentPlayer===1?2:1;
+          if(vsAI && currentPlayer===2 && !gameOver){
+            setTimeout(aiMove,500);
+          }
+        }
+        drawBoard();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function checkWin(r,c){
+    const player=grid[r][c];
+    function countDir(dr,dc){
+      let rr=r+dr, cc=c+dc, count=0;
+      while(rr>=0 && rr<ROWS && cc>=0 && cc<COLS && grid[rr][cc]===player){
+        count++; rr+=dr; cc+=dc;
+      }
+      return count;
+    }
+    const dirs=[[1,0],[0,1],[1,1],[1,-1]];
+    return dirs.some(([dr,dc])=>{
+      return 1+countDir(dr,dc)+countDir(-dr,-dc)>=4;
+    });
+  }
+
+  function showWinner(text, win=false, draw=false){
+    gameOver=true;
+    document.getElementById('winner').textContent=text;
+    document.getElementById('end').style.display='flex';
+    if(win) try{sfxWin.currentTime=0; sfxWin.play();}catch(e){}
+    if(draw) try{sfxDraw.currentTime=0; sfxDraw.play();}catch(e){}
+  }
+
+  function aiMove(){
+    let validCols=[];
+    for(let c=0;c<COLS;c++) if(grid[0][c]===0) validCols.push(c);
+    if(validCols.length===0) return;
+    for(let c of validCols){
+      let r = getRow(c);
+      if(r!==-1){
+        grid[r][c]=2;
+        if(checkWin(r,c)){ grid[r][c]=0; drop(c); return; }
+        grid[r][c]=0;
+      }
+    }
+    for(let c of validCols){
+      let r = getRow(c);
+      if(r!==-1){
+        grid[r][c]=1;
+        if(checkWin(r,c)){ grid[r][c]=0; drop(c); return; }
+        grid[r][c]=0;
+      }
+    }
+    const col=validCols[Math.floor(Math.random()*validCols.length)];
+    drop(col);
+  }
+
+  function getRow(c){
+    for(let r=ROWS-1;r>=0;r--){
+      if(grid[r][c]===0) return r;
+    }
+    return -1;
+  }
+
+  canvas.addEventListener('click',e=>{
+    if(gameOver) return;
+    const col=Math.floor(e.offsetX/SIZE);
+    drop(col);
+  });
+
+  document.getElementById('pvp').addEventListener('click',()=>{
+    vsAI=false;
+    document.getElementById('menu').style.display='none';
+    resetGame();
+    bgMenu.pause();
+  });
+  document.getElementById('ai').addEventListener('click',()=>{
+    vsAI=true;
+    document.getElementById('menu').style.display='none';
+    resetGame();
+    bgMenu.pause();
+  });
+  document.getElementById('replay').addEventListener('click',()=>{
+    document.getElementById('end').style.display='none';
+    document.getElementById('menu').style.display='flex';
+    try{ bgMenu.currentTime=0; bgMenu.play(); }catch(e){}
+  });
+
+  // Arrière-plan animé
+  function spawnCoin(){
+    const coin=document.createElement("div");
+    coin.className="fallingCoin";
+    const size=30+Math.random()*30;
+    coin.style.width=size+"px";
+    coin.style.height=size+"px";
+    coin.style.left=Math.random()*100+"vw";
+    coin.style.background=Math.random()>0.5?"#ff3333":"#ffff33";
+    coin.style.animationDuration=(4+Math.random()*4)+"s";
+    document.getElementById("menu").appendChild(coin);
+    coin.addEventListener("animationend",()=>coin.remove());
+  }
+  setInterval(()=>{ 
+    if(document.getElementById("menu").style.display!=="none"){
+      spawnCoin(); 
+    }
+  },600);
+
+  try{ bgMenu.play(); }catch(e){}
+})();
+</script>
+</body>
+</html>

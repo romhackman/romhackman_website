@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Slot 3 Rouleaux — GameShop</title>
+<style>
+:root{
+  --accent1:#5cc8ff;
+  --accent2:#ff7ab6;
+  --bg:#06060a;
+  --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:system-ui,Segoe UI,Arial;
+  background:radial-gradient(circle at 10% 10%,rgba(92,200,255,0.05),transparent 40%),radial-gradient(circle at 90% 90%,rgba(255,122,182,0.04),transparent 40%),var(--bg);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  height:100vh;
+  overflow:hidden;
+}
+h1{font-size:26px;margin-bottom:10px;text-shadow:0 0 10px var(--accent1)}
+.slot-machine{
+  background:rgba(255,255,255,0.03);
+  border-radius:var(--radius);
+  padding:20px 30px;
+  box-shadow:0 0 30px rgba(92,200,255,0.1),0 0 30px rgba(255,122,182,0.1);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.reels{
+  display:flex;
+  gap:20px;
+  margin:20px 0;
+}
+.reel{
+  width:100px;
+  height:100px;
+  border-radius:12px;
+  background:linear-gradient(180deg,#111316,#090a0c);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:48px;
+  box-shadow:inset 0 0 10px rgba(0,0,0,0.5);
+}
+.hud{
+  display:flex;
+  gap:30px;
+  margin-bottom:12px;
+}
+.hud div{text-align:center}
+.value{font-size:22px;font-weight:bold}
+.controls{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+button{
+  background:linear-gradient(90deg,var(--accent2),var(--accent1));
+  border:none;
+  padding:10px 16px;
+  border-radius:var(--radius);
+  color:#fff;
+  font-weight:700;
+  cursor:pointer;
+  transition:transform .2s;
+}
+button:hover{transform:scale(1.05)}
+button.small{background:rgba(255,255,255,0.1);font-size:13px}
+.msg{height:24px;margin-top:10px;opacity:.9;text-align:center}
+.footer{font-size:12px;opacity:.6;margin-top:4px}
+</style>
+</head>
+<body>
+<h1>🎰 Machine à sous — 3 Rouleaux</h1>
+<div class="slot-machine">
+  <div class="hud">
+    <div><div>💰 Argent</div><div class="value" id="money">0</div></div>
+    <div><div>🎟️ Jetons</div><div class="value" id="tokens">0</div></div>
+  </div>
+
+  <div class="reels">
+    <div class="reel" id="r1">🍒</div>
+    <div class="reel" id="r2">🍋</div>
+    <div class="reel" id="r3">💎</div>
+  </div>
+
+  <div class="controls">
+    <button id="spinBtn">🎰 Tirer (1 jeton)</button>
+    <button id="allInBtn">💥 Tout miser</button>
+    <button id="exportBtn" class="small">⬇ Exporter</button>
+    <button id="importBtn" class="small">⬆ Importer</button>
+    <button id="resetBtn" class="small">🔁 Réinitialiser</button>
+  </div>
+  <div class="msg" id="message">Prêt !</div>
+  <div class="footer">Triche : tape <b>klp</b> pour +10 jetons</div>
+</div>
+
+<audio id="spinAudio" src="musique/spin.mp3" preload="auto"></audio>
+<audio id="winAudio" src="musique/win.wav" preload="auto"></audio>
+
+<script>
+/* ---------- CONFIG ---------- */
+const SYMBOLS=[
+  {emoji:"🍒",mult:2},
+  {emoji:"🍋",mult:3},
+  {emoji:"🔔",mult:5},
+  {emoji:"💎",mult:10},
+  {emoji:"🍀",mult:8},
+  {emoji:"⭐",mult:4}
+];
+const STORAGE_MONEY="slot_money_v1";
+const STORAGE_TOKENS="slot_tokens_v1";
+let money=parseInt(localStorage.getItem(STORAGE_MONEY)||"0",10);
+let tokens=parseInt(localStorage.getItem(STORAGE_TOKENS)||"10",10);
+let spinning=false;
+let keyBuffer="";
+
+/* ---------- DOM ---------- */
+const r1=document.getElementById("r1");
+const r2=document.getElementById("r2");
+const r3=document.getElementById("r3");
+const reels=[r1,r2,r3];
+const spinBtn=document.getElementById("spinBtn");
+const allInBtn=document.getElementById("allInBtn");
+const exportBtn=document.getElementById("exportBtn");
+const importBtn=document.getElementById("importBtn");
+const resetBtn=document.getElementById("resetBtn");
+const msg=document.getElementById("message");
+const moneyEl=document.getElementById("money");
+const tokensEl=document.getElementById("tokens");
+const spinAudio=document.getElementById("spinAudio");
+const winAudio=document.getElementById("winAudio");
+
+/* ---------- UPDATE HUD ---------- */
+function updateHUD(){
+  moneyEl.textContent=money;
+  tokensEl.textContent=tokens;
+  localStorage.setItem(STORAGE_MONEY,money);
+  localStorage.setItem(STORAGE_TOKENS,tokens);
+}
+
+/* ---------- SPIN ---------- */
+function randomSymbol(){return SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)];}
+
+async function spin(mise){
+  if(spinning)return;
+  if(tokens<mise){msg.textContent="Pas assez de jetons !";return;}
+  spinning=true;
+  tokens-=mise;
+  updateHUD();
+  msg.textContent="La machine tourne...";
+  try{spinAudio.currentTime=0;spinAudio.play().catch(()=>{});}catch{}
+
+  const results=[randomSymbol(),randomSymbol(),randomSymbol()];
+  // animation pseudo-roulette
+  for(let i=0;i<15;i++){
+    reels.forEach(r=>r.textContent=randomSymbol().emoji);
+    await new Promise(r=>setTimeout(r,80+i*20));
+  }
+  results.forEach((s,i)=>reels[i].textContent=s.emoji);
+
+  let gain=0;
+  if(results[0].emoji===results[1].emoji && results[1].emoji===results[2].emoji){
+    gain=mise*results[0].mult;
+  }else if(results[0].emoji===results[1].emoji || results[1].emoji===results[2].emoji || results[0].emoji===results[2].emoji){
+    gain=mise; // petit lot
+  }
+  if(gain>0){
+    money+=gain;
+    msg.textContent=`🎉 Tu gagnes ${gain} pièces !`;
+    try{winAudio.currentTime=0;winAudio.play().catch(()=>{});}catch{}
+  }else{
+    msg.textContent="😞 Rien ! Retente ta chance !";
+  }
+  updateHUD();
+  spinning=false;
+}
+
+/* ---------- BUTTONS ---------- */
+spinBtn.onclick=()=>spin(1);
+allInBtn.onclick=()=>spin(tokens);
+resetBtn.onclick=()=>{
+  if(confirm("Réinitialiser ?")){money=0;tokens=10;updateHUD();msg.textContent="Progression réinitialisée.";}
+};
+exportBtn.onclick=()=>{
+  const data={money,tokens};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download="sauvegarde.json";a.click();URL.revokeObjectURL(url);
+  msg.textContent="💾 Sauvegarde exportée !";
+};
+importBtn.onclick=()=>{
+  const input=document.createElement("input");
+  input.type="file";input.accept=".json";
+  input.onchange=e=>{
+    const f=e.target.files[0];
+    if(!f)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const d=JSON.parse(ev.target.result);
+        money=d.money||0;tokens=d.tokens||10;
+        updateHUD();msg.textContent="✅ Sauvegarde importée.";
+      }catch{msg.textContent="Erreur de fichier !";}
+    };
+    reader.readAsText(f);
+  };
+  input.click();
+};
+
+/* ---------- TRICHE ---------- */
+window.addEventListener("keydown",e=>{
+  keyBuffer+=e.key.toLowerCase();
+  if(keyBuffer.endsWith("klp")){
+    tokens+=10;updateHUD();msg.textContent="✅ Triche : +10 jetons !";
+    keyBuffer="";
+  }
+});
+
+/* ---------- INIT ---------- */
+updateHUD();
+msg.textContent="Prêt à jouer !";
+</script>
+</body>
+</html>
